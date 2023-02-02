@@ -23,9 +23,9 @@ def authenticate(
     password: str,
     db: Session,
 ) -> Optional[User]:
-    user = db.query(User).filter(User.email == email).first()
+    user = db.query(User).filter(User.username == email).first()
     if not user:
         return None
-    if not verify_password(password, user.hashed_password):
+    if not verify_password(password, user.password):
         return None
     return user

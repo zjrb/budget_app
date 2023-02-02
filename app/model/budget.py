@@ -11,9 +11,10 @@ from app.db.session import Base
 import uuid
 
 
-class Purchase(Base):
-    __tablename__ = "purchases"
+class Budget(Base):
+    __tablename__ = "budget"
     id = Column(UUID(as_uuid=True), primary_key=True, index=True, default=uuid.uuid4)
-    item = Column(String)
-    cost = Column(Integer)
+    name = Column(String)
     user_id = Column(UUID(as_uuid=True), ForeignKey("user.id"), index=True)
+    start_budget = Column(Integer)
+    curr_budget = Column(Integer)
