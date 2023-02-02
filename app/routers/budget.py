@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException 
+from fastapi import APIRouter, Depends, HTTPException
 from app.db.session import SessionLocal
 from pydantic import BaseModel
 from app.model.user import User as user_model
@@ -11,31 +11,42 @@ from fastapi.security import OAuth2PasswordRequestForm
 
 router = APIRouter()
 
+
 class User(BaseModel):
     firstname: str
     lastname: str
     username: str
     password: str
 
+
 class Budget(BaseModel):
     name: str
     start_budget: int
 
 
+class BudgetResponse(BaseModel):
+    name: str
+    start_budget: int
+    curr_budget: int
+
+
 class Purchase(BaseModel):
     item: str
-    cost: int   
+    cost: int
+
 
 @router.post("/create_user")
 def create_user(user: User) -> User:
 
-    
     usr = user.dict()
     usr["id"] = uuid.uuid4()
-    usr["password"] = get_password_hash(usr['password'])
+    usr["password"] = get_password_hash(usr["password"])
     db = SessionLocal.session_factory()
 
-    if db.query(user_model).filter(user_model.username == usr['username']).first() is not None:
+    if (
+        db.query(user_model).filter(user_model.username == usr["username"]).first()
+        is not None
+    ):
         raise HTTPException(status_code=400, detail="Username already taken")
 
     new_user = user_model(**usr)
@@ -45,6 +56,7 @@ def create_user(user: User) -> User:
     db.add(new_token)
     db.commit()
     return usr
+
 
 @router.post("/login")
 def login(form_data: OAuth2PasswordRequestForm = Depends()):
@@ -57,55 +69,145 @@ def login(form_data: OAuth2PasswordRequestForm = Depends()):
             headers={"WWW-Authenticate": "Bearer"},
         )
     token = uuid.uuid4()
-  
-    db.query(authtoken_model).where(authtoken_model.user_id == user.id).update({"token": token})
+
+    db.query(authtoken_model).where(authtoken_model.user_id == user.id).update(
+        {"token": token}
+    )
     db.commit()
     return {"access_token": token, "token_type": "bearer"}
+
 
 @router.get("/me")
 def read_users_me(auth_token: str):
     db = SessionLocal.session_factory()
-    current_user = db.query(user_model).join(authtoken_model).filter(authtoken_model.token == auth_token).first()
+    current_user = (
+        db.query(user_model)
+        .join(authtoken_model)
+        .filter(authtoken_model.token == auth_token)
+        .first()
+    )
     return current_user
 
 
 @router.post("/create_budget")
 def create_budget(budget: Budget, auth_token: str):
     db = SessionLocal.session_factory()
-    current_user = db.query(user_model).join(authtoken_model).filter(authtoken_model.token == auth_token).first()
+    current_user = (
+        db.query(user_model)
+        .join(authtoken_model)
+        .filter(authtoken_model.token == auth_token)
+        .first()
+    )
     if current_user is None:
         raise HTTPException(status_code=401, detail="Not authorized")
-    new_budget = budget_model(name=budget.name, start_budget=budget.start_budget, user_id=current_user.id, curr_budget=budget.start_budget)
+    new_budget = budget_model(
+        name=budget.name,
+        start_budget=budget.start_budget,
+        user_id=current_user.id,
+        curr_budget=budget.start_budget,
+    )
     db.add(new_budget)
     db.commit()
     return new_budget
 
+
 @router.post("/logout")
 def logout(auth_token: str):
     db = SessionLocal.session_factory()
-    current_user = db.query(user_model).join(authtoken_model).filter(authtoken_model.token == auth_token).first()
+    current_user = (
+        db.query(user_model)
+        .join(authtoken_model)
+        .filter(authtoken_model.token == auth_token)
+        .first()
+    )
     if current_user is None:
         raise HTTPException(status_code=401, detail="Not authorized")
-    db.query(authtoken_model).where(authtoken_model.user_id == current_user.id).update({"token": None})
+    db.query(authtoken_model).where(authtoken_model.user_id == current_user.id).update(
+        {"token": None}
+    )
     db.commit()
     return "Logged out"
-
-
 
 
 @router.post("/add_purchase")
 def add_purchase(purchase: Purchase, auth_token: str):
     db = SessionLocal.session_factory()
-    current_user = db.query(user_model).join(authtoken_model).filter(authtoken_model.token == auth_token).first()
-    budget = db.query(budget_model).filter(budget_model.user_id == current_user.id).first()
+    current_user = (
+        db.query(user_model)
+        .join(authtoken_model)
+        .filter(authtoken_model.token == auth_token)
+        .first()
+    )
+    budget = (
+        db.query(budget_model).filter(budget_model.user_id == current_user.id).first()
+    )
     if current_user is None:
         raise HTTPException(status_code=401, detail="Not authorized")
-    new_purchase = purchase_model(item=purchase.item, cost=purchase.cost, user_id=current_user.id)
+    new_purchase = purchase_model(
+        item=purchase.item, cost=purchase.cost, user_id=current_user.id
+    )
     budget.curr_budget -= purchase.cost
     db.add(new_purchase)
     db.commit()
     return new_purchase
 
 
+@router.get("/get_purchases")
+def get_purchases(auth_token: str) -> list[Purchase]:
+    db = SessionLocal.session_factory()
+    current_user = (
+        db.query(user_model)
+        .join(authtoken_model)
+        .filter(authtoken_model.token == auth_token)
+        .first()
+    )
+    if current_user is None:
+        raise HTTPException(status_code=401, detail="Not authorized")
+    purchases = (
+        db.query(purchase_model).filter(purchase_model.user_id == current_user.id).all()
+    )
+    return_purchases = []
+    for purchase in purchases:
+        return_purchases.append(Purchase(item=purchase.item, cost=purchase.cost))
+    return return_purchases
 
-    
+
+@router.get("/get_budget")
+def get_budget(auth_token: str) -> BudgetResponse:
+    db = SessionLocal.session_factory()
+    current_user = (
+        db.query(user_model)
+        .join(authtoken_model)
+        .filter(authtoken_model.token == auth_token)
+        .first()
+    )
+    if current_user is None:
+        raise HTTPException(status_code=401, detail="Not authorized")
+    budget = (
+        db.query(budget_model).filter(budget_model.user_id == current_user.id).first()
+    )
+    return_budget = BudgetResponse(
+        name=budget.name,
+        start_budget=budget.start_budget,
+        curr_budget=budget.curr_budget,
+    )
+    return return_budget
+
+
+@router.post("/add_money")
+def add_money(money: int, auth_token: str):
+    db = SessionLocal.session_factory()
+    current_user = (
+        db.query(user_model)
+        .join(authtoken_model)
+        .filter(authtoken_model.token == auth_token)
+        .first()
+    )
+    if current_user is None:
+        raise HTTPException(status_code=401, detail="Not authorized")
+    budget = (
+        db.query(budget_model).filter(budget_model.user_id == current_user.id).first()
+    )
+    budget.curr_budget += money
+    db.commit()
+    return budget
